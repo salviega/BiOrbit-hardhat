@@ -19,7 +19,7 @@ git clone https://github.com/salviega/BiOrbit-hardhat.git
 yarn
 ```
 
-> Show address wallet:
+> Show wallet address:
 
 
 ```
