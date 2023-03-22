@@ -10,7 +10,9 @@ import '@openzeppelin/contracts/utils/Counters.sol';
 /**
  *  @title Biorbit
  *
- *  NOTE:
+ *  NOTE: Biorbit is a blockchain-based platform that enables monitoring and protection of Earth's natural resources
+ *  through satellite imagery and community engagement. Users can contribute to the platform by donating to monitor
+ *  protected areas and purchasing satellite images, ultimately fostering sustainable development and environmental conservation.
  *
  */
 
@@ -76,20 +78,21 @@ contract Biorbit is ERC721, ERC721URIStorage, AccessControl, ReentrancyGuard {
 	) external payable {
 		require(msg.value >= donation, 'Insufficient funds');
 		require(
-			protectedAreasNamesUsed[_name] == false,
-			'Protected area is being monitored.'
+			!protectedAreasNamesUsed[_name],
+			'Protected area is already being monitored.'
 		);
 
-		uint256 protectedAreaId = protectAreaIdCounter.current();
-		protectAreaIdCounter.increment();
-
+		uint256 protectedAreaId = _getNextProtectedAreaId();
 		ProtectedArea storage protectedArea = protectedAreas[protectedAreaId];
-		protectedArea.id = protectedAreaId;
-		protectedArea.name = _name;
-		protectedArea.photo = _photo;
-		protectedArea.description = _description;
-		protectedArea.geoJson = _geoJson;
-		protectedArea.country = _country;
+		_setProtectedAreaData(
+			protectedArea,
+			protectedAreaId,
+			_name,
+			_photo,
+			_description,
+			_geoJson,
+			_country
+		);
 		protectedArea.donates.push(msg.sender);
 
 		emit ProtectedAreaCreated(
@@ -110,7 +113,7 @@ contract Biorbit is ERC721, ERC721URIStorage, AccessControl, ReentrancyGuard {
 		string[] memory _detectionDates,
 		uint256[] memory _forestCoverExtensions
 	) external onlyRole(ADMIN_ROLE) {
-		protectedAreasNamesUsed[_protectedAreaName] = true;
+		_validateProtectedArea(_protectedAreaName, _protectedAreaId);
 
 		ProtectedArea storage protectedArea = protectedAreas[_protectedAreaId];
 		protectedArea.lastDetectionDate = _lastDetectionDate;
@@ -130,33 +133,21 @@ contract Biorbit is ERC721, ERC721URIStorage, AccessControl, ReentrancyGuard {
 		uint256 _protectedAreaId,
 		string memory _protectedAreaURI
 	) public onlyRole(ADMIN_ROLE) returns (uint256) {
-		require(
-			protectedAreasNamesUsed[_protectedAreaName] == true,
-			"Protected area isn't being monitored."
+		_validateProtectedArea(_protectedAreaName, _protectedAreaId);
+
+		uint256 satelliteImageId = _getNextSatelliteImageId();
+
+		SatelliteImage memory satelliteImage = _createSatelliteImage(
+			satelliteImageId,
+			_protectedAreaURI,
+			msg.sender
 		);
-
-		ProtectedArea storage protectedArea = protectedAreas[_protectedAreaId];
-
-		require(
-			keccak256(bytes(protectedArea.name)) ==
-				keccak256(bytes(_protectedAreaName)),
-			"They aren't the same protected area."
+		_addSatelliteImageToProtectedArea(
+			_protectedAreaId,
+			_protectedAreaName,
+			satelliteImage,
+			satelliteImageId
 		);
-
-		uint256 satelliteImageId = satelliteImageIdCounter.current();
-		protectAreaIdCounter.increment();
-
-		SatelliteImage memory satelliteImage = SatelliteImage({
-			id: satelliteImageId,
-			nft: this,
-			uri: _protectedAreaURI,
-			price: price,
-			sold: false,
-			seller: payable(msg.sender)
-		});
-
-		protectedArea.satelliteImages.push(satelliteImage);
-		satelliteImagesOfProtectedArea[satelliteImageId] = _protectedAreaName;
 
 		_safeMint(msg.sender, satelliteImageId);
 		_setTokenURI(satelliteImageId, _protectedAreaURI);
@@ -184,23 +175,6 @@ contract Biorbit is ERC721, ERC721URIStorage, AccessControl, ReentrancyGuard {
 		);
 
 		this.transferFrom(msg.sender, address(this), _satelliteImageId);
-	}
-
-	function getSatelliteImage(
-		uint256 _satelliteImageId
-	) public view returns (SatelliteImage memory) {
-		for (uint256 i = 0; i < protectAreaIdCounter.current(); i++) {
-			ProtectedArea storage protectedArea = protectedAreas[i];
-			for (uint256 j = 0; j < protectedArea.satelliteImages.length; j++) {
-				SatelliteImage storage satelliteImage = protectedArea.satelliteImages[
-					j
-				];
-				if (satelliteImage.id == _satelliteImageId) {
-					return satelliteImage;
-				}
-			}
-		}
-		revert('SatelliteImage not found');
 	}
 
 	function buySatelliteImage(
@@ -238,16 +212,84 @@ contract Biorbit is ERC721, ERC721URIStorage, AccessControl, ReentrancyGuard {
 		return super.supportsInterface(interfaceId);
 	}
 
-	function withdraw() external onlyRole(ADMIN_ROLE) {
-		require(address(this).balance > 0, "The contract hasn't funds.");
+	// *********************************** //
+	// *        Private funcions         * //
+	// *********************************** //
 
-		(bool response /*bytes memory data*/, ) = msg.sender.call{
-			value: address(this).balance
-		}('');
-		require(response, 'reverted');
+	function _validateProtectedArea(
+		string memory _protectedAreaName,
+		uint256 _protectedAreaId
+	) private view {
+		require(
+			protectedAreasNamesUsed[_protectedAreaName],
+			"Protected area isn't being monitored."
+		);
+
+		ProtectedArea storage protectedArea = protectedAreas[_protectedAreaId];
+
+		require(
+			keccak256(bytes(protectedArea.name)) ==
+				keccak256(bytes(_protectedAreaName)),
+			"They aren't the same protected area."
+		);
 	}
 
-	function receive() external {}
+	function _getNextSatelliteImageId() private returns (uint256) {
+		uint256 satelliteImageId = satelliteImageIdCounter.current();
+		satelliteImageIdCounter.increment();
+		return satelliteImageId;
+	}
+
+	function _getNextProtectedAreaId() private returns (uint256) {
+		uint256 protectedAreaId = protectAreaIdCounter.current();
+		protectAreaIdCounter.increment();
+		return protectedAreaId;
+	}
+
+	function _createSatelliteImage(
+		uint256 _satelliteImageId,
+		string memory _protectedAreaURI,
+		address _seller
+	) private view returns (SatelliteImage memory) {
+		SatelliteImage memory satelliteImage = SatelliteImage({
+			id: _satelliteImageId,
+			nft: this,
+			uri: _protectedAreaURI,
+			price: price,
+			sold: false,
+			seller: payable(_seller)
+		});
+
+		return satelliteImage;
+	}
+
+	function _addSatelliteImageToProtectedArea(
+		uint256 _protectedAreaId,
+		string memory _protectedAreaName,
+		SatelliteImage memory _satelliteImage,
+		uint256 _satelliteImageId
+	) private {
+		ProtectedArea storage protectedArea = protectedAreas[_protectedAreaId];
+		protectedArea.satelliteImages.push(_satelliteImage);
+		satelliteImagesOfProtectedArea[_satelliteImageId] = _protectedAreaName;
+	}
+
+	function _setProtectedAreaData(
+		ProtectedArea storage protectedArea,
+		uint256 _id,
+		string memory _name,
+		string memory _photo,
+		string memory _description,
+		string memory _geoJson,
+		string memory _country
+	) private {
+		protectedArea.id = _id;
+		protectedArea.name = _name;
+		protectedArea.photo = _photo;
+		protectedArea.description = _description;
+		protectedArea.geoJson = _geoJson;
+		protectedArea.country = _country;
+	}
 
 	// ************************************ //
 	// *        Getters & Setters         * //
@@ -275,6 +317,27 @@ contract Biorbit is ERC721, ERC721URIStorage, AccessControl, ReentrancyGuard {
 		require(_price > 0, 'The new NFTs price must be different non-zero.');
 		price = _price;
 		return donation;
+	}
+
+	function totalAsserts() public view returns (uint256) {
+		return address(this).balance;
+	}
+
+	function getSatelliteImage(
+		uint256 _satelliteImageId
+	) public view returns (SatelliteImage memory) {
+		for (uint256 i = 0; i < protectAreaIdCounter.current(); i++) {
+			ProtectedArea storage protectedArea = protectedAreas[i];
+			for (uint256 j = 0; j < protectedArea.satelliteImages.length; j++) {
+				SatelliteImage storage satelliteImage = protectedArea.satelliteImages[
+					j
+				];
+				if (satelliteImage.id == _satelliteImageId) {
+					return satelliteImage;
+				}
+			}
+		}
+		revert('SatelliteImage not found');
 	}
 
 	function getProtectedAreasByUsedNames()
