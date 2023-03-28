@@ -27,6 +27,7 @@ contract Biorbit is ERC721, ERC721URIStorage, AccessControl, ReentrancyGuard {
 
 	uint256 public donation = 0.2 ether;
 	uint256 public price = 0.1 ether;
+	address public relay;
 
 	/* Struct */
 
@@ -64,9 +65,10 @@ contract Biorbit is ERC721, ERC721URIStorage, AccessControl, ReentrancyGuard {
 
 	event ProtectedAreaCreated(uint256, string, string, string, string, string);
 
-	constructor() ERC721('Biorbit', 'BOT') {
+	constructor(address _relay) ERC721('Biorbit', 'BOT') {
 		_setupRole(DEFAULT_ADMIN_ROLE, msg.sender);
 		_setupRole(ADMIN_ROLE, msg.sender);
+		relay = _relay;
 	}
 
 	function monitorProtectedArea(
@@ -94,6 +96,8 @@ contract Biorbit is ERC721, ERC721URIStorage, AccessControl, ReentrancyGuard {
 			_country
 		);
 		protectedArea.donates.push(msg.sender);
+
+		payable(relay).transfer(msg.value);
 
 		emit ProtectedAreaCreated(
 			protectedArea.id,
@@ -161,18 +165,17 @@ contract Biorbit is ERC721, ERC721URIStorage, AccessControl, ReentrancyGuard {
 		string memory protectedAreaName = satelliteImagesOfProtectedArea[
 			_satelliteImageId
 		];
+		address owner = this.ownerOf(_satelliteImageId);
+		address approved = this.getApproved(_satelliteImageId);
+
 		require(
 			bytes(protectedAreaName).length > 0,
 			"Satellite image doesn't belong to any protected area."
 		);
-		require(
-			this.ownerOf(_satelliteImageId) == msg.sender,
-			"The owner isn't NFT owner"
-		);
-		require(
-			this.getApproved(_satelliteImageId) == address(this),
-			"The NFT isn't approved yet."
-		);
+
+		require(owner == msg.sender, "The owner isn't NFT owner");
+
+		require(approved == address(this), "The NFT isn't approved yet.");
 
 		this.transferFrom(msg.sender, address(this), _satelliteImageId);
 	}
@@ -188,7 +191,7 @@ contract Biorbit is ERC721, ERC721URIStorage, AccessControl, ReentrancyGuard {
 
 		SatelliteImage memory satelliteImage = getSatelliteImage(_satelliteImageId);
 
-		require(msg.value == satelliteImage.price, 'Insufficient funds.');
+		require(msg.value == price, 'Insufficient funds.');
 		require(!satelliteImage.sold, 'Satellite Image already sold.');
 
 		satelliteImage.sold = true;
@@ -310,6 +313,11 @@ contract Biorbit is ERC721, ERC721URIStorage, AccessControl, ReentrancyGuard {
 		return donation;
 	}
 
+	function setRelayAddress(address _relay) external onlyRole(ADMIN_ROLE) {
+		require(_relay != address(0), 'Invalid relay address');
+		relay = _relay;
+	}
+
 	function setPrice(
 		uint256 _price
 	) external onlyRole(ADMIN_ROLE) returns (uint256) {
@@ -359,46 +367,6 @@ contract Biorbit is ERC721, ERC721URIStorage, AccessControl, ReentrancyGuard {
 		for (uint256 i = 0; i < protectAreaIdCounter.current(); i++) {
 			if (protectedAreasNamesUsed[protectedAreas[i].name]) {
 				result[index] = protectedAreas[i];
-				index++;
-			}
-		}
-		return result;
-	}
-
-	function getProtectedAreasByNamePagination(
-		string calldata name,
-		uint256 page,
-		uint256 pageSize
-	) external view returns (ProtectedArea[] memory) {
-		uint256 startIndex = page * pageSize;
-		uint256 endIndex = startIndex + pageSize;
-
-		uint256 count = 0;
-		for (uint256 i = 0; i < protectAreaIdCounter.current(); i++) {
-			if (
-				keccak256(bytes(protectedAreas[i].name)) == keccak256(bytes(name)) &&
-				protectedAreasNamesUsed[name]
-			) {
-				count++;
-			}
-		}
-
-		require(startIndex < count, 'Invalid page');
-
-		if (endIndex > count) {
-			endIndex = count;
-		}
-
-		ProtectedArea[] memory result = new ProtectedArea[](endIndex - startIndex);
-		uint256 index = 0;
-		for (uint256 i = 0; i < protectAreaIdCounter.current(); i++) {
-			if (
-				keccak256(bytes(protectedAreas[i].name)) == keccak256(bytes(name)) &&
-				protectedAreasNamesUsed[name]
-			) {
-				if (index >= startIndex && index < endIndex) {
-					result[index - startIndex] = protectedAreas[i];
-				}
 				index++;
 			}
 		}

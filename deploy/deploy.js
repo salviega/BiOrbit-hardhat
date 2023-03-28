@@ -13,7 +13,9 @@ module.exports = async ({ deployments }) => {
 	//deploy Biorbit
 	const Biorbit = await ethers.getContractFactory('Biorbit', wallet)
 	console.log('Deploying Biorbit...')
-	const biorbit = await Biorbit.deploy()
+	const biorbit = await Biorbit.deploy(
+		'0xE8e1543235e6C35C656ef0b28526C61571583f4B'
+	)
 	await biorbit.deployed()
 	console.log('biorbit deployed to:', biorbit.address)
 }

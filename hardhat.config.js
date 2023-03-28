@@ -12,7 +12,7 @@ module.exports = {
 		settings: {
 			optimizer: {
 				enabled: true,
-				runs: 1000,
+				runs: 2000,
 				details: { yul: false }
 			}
 		}
@@ -22,12 +22,16 @@ module.exports = {
 		Hyperspace: {
 			chainId: 3141,
 			url: 'https://api.hyperspace.node.glif.io/rpc/v1',
-			accounts: [PRIVATE_KEY]
+			accounts: [PRIVATE_KEY],
+			gas: 6000000, // Increase the gas limit
+			gasPrice: 10000000000 // Set a custom gas price (in Gwei, optional)
 		},
 		FilecoinMainnet: {
 			chainId: 314,
 			url: 'https://api.node.glif.io',
-			accounts: [PRIVATE_KEY]
+			accounts: [PRIVATE_KEY],
+			gas: 6000000, // Increase the gas limit
+			gasPrice: 10000000000 // Set a custom gas price (in Gwei, optional)
 		}
 	},
 	paths: {
