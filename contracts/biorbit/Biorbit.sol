@@ -25,8 +25,8 @@ contract Biorbit is ERC721, ERC721URIStorage, AccessControl, ReentrancyGuard {
 
 	/* Constants and immutable */
 
-	uint256 public donation = 0.2 ether;
-	uint256 public price = 0.1 ether;
+	uint256 public donation = 0.0000002 ether;
+	uint256 public price = 0.0000001 ether;
 	address public relay;
 
 	/* Struct */
