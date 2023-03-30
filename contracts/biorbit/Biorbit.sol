@@ -20,8 +20,8 @@ contract Biorbit is ERC721, ERC721URIStorage, AccessControl, ReentrancyGuard {
 	using Counters for Counters.Counter;
 
 	bytes32 public constant ADMIN_ROLE = keccak256('ADMIN_ROLE');
-	Counters.Counter private protectAreaIdCounter;
-	Counters.Counter private satelliteImageIdCounter;
+	Counters.Counter public protectAreaIdCounter;
+	Counters.Counter public satelliteImageIdCounter;
 
 	/* Constants and immutable */
 
@@ -32,10 +32,10 @@ contract Biorbit is ERC721, ERC721URIStorage, AccessControl, ReentrancyGuard {
 	/* Struct */
 
 	struct SatelliteImage {
-		uint id;
+		uint256 id;
 		IERC721 nft;
 		string uri;
-		uint price;
+		uint256 price;
 		bool sold;
 		address payable seller;
 	}
@@ -43,14 +43,11 @@ contract Biorbit is ERC721, ERC721URIStorage, AccessControl, ReentrancyGuard {
 	struct ProtectedArea {
 		uint256 id;
 		string name;
-		string photo;
-		string description;
-		string country;
-		string geoJson;
+		string footprint;
 		string lastDetectionDate;
-		uint256 totalExtension;
+		string totalExtension;
 		string[] detectionDates;
-		uint256[] forestCoverExtensions;
+		string[] forestCoverExtensions;
 		address[] donates;
 		SatelliteImage[] satelliteImages;
 	}
@@ -59,11 +56,11 @@ contract Biorbit is ERC721, ERC721URIStorage, AccessControl, ReentrancyGuard {
 
 	mapping(uint256 => ProtectedArea) protectedAreas;
 	mapping(string => bool) protectedAreasNamesUsed;
-	mapping(uint => string) public satelliteImagesOfProtectedArea;
+	mapping(uint256 => string) public satelliteImagesOfProtectedArea;
 
 	/* Events */
 
-	event ProtectedAreaCreated(uint256, string, string, string, string, string);
+	event ProtectedAreaCreated(uint256, string, string);
 
 	constructor(address _relay) ERC721('Biorbit', 'BOT') {
 		_setupRole(DEFAULT_ADMIN_ROLE, msg.sender);
@@ -73,10 +70,7 @@ contract Biorbit is ERC721, ERC721URIStorage, AccessControl, ReentrancyGuard {
 
 	function monitorProtectedArea(
 		string memory _name,
-		string memory _photo,
-		string memory _description,
-		string memory _geoJson,
-		string memory _country
+		string memory _footprint
 	) external payable {
 		require(msg.value >= donation, 'Insufficient funds');
 		require(
@@ -86,26 +80,17 @@ contract Biorbit is ERC721, ERC721URIStorage, AccessControl, ReentrancyGuard {
 
 		uint256 protectedAreaId = _getNextProtectedAreaId();
 		ProtectedArea storage protectedArea = protectedAreas[protectedAreaId];
-		_setProtectedAreaData(
-			protectedArea,
-			protectedAreaId,
-			_name,
-			_photo,
-			_description,
-			_geoJson,
-			_country
-		);
+		_setProtectedAreaData(protectedArea, protectedAreaId, _name, _footprint);
 		protectedArea.donates.push(msg.sender);
 
 		payable(relay).transfer(msg.value);
 
+		protectedAreasNamesUsed[_name] = true;
+
 		emit ProtectedAreaCreated(
 			protectedArea.id,
 			protectedArea.name,
-			protectedArea.photo,
-			protectedArea.description,
-			protectedArea.geoJson,
-			protectedArea.country
+			protectedArea.footprint
 		);
 	}
 
@@ -113,11 +98,12 @@ contract Biorbit is ERC721, ERC721URIStorage, AccessControl, ReentrancyGuard {
 		uint256 _protectedAreaId,
 		string memory _protectedAreaName,
 		string memory _lastDetectionDate,
-		uint256 _totalExtension,
+		string memory _totalExtension,
 		string[] memory _detectionDates,
-		uint256[] memory _forestCoverExtensions
+		string[] memory _forestCoverExtensions
 	) external onlyRole(ADMIN_ROLE) {
 		_validateProtectedArea(_protectedAreaName, _protectedAreaId);
+		_validateProtectedAreaData(_protectedAreaId);
 
 		ProtectedArea storage protectedArea = protectedAreas[_protectedAreaId];
 		protectedArea.lastDetectionDate = _lastDetectionDate;
@@ -133,8 +119,8 @@ contract Biorbit is ERC721, ERC721URIStorage, AccessControl, ReentrancyGuard {
 	}
 
 	function mint(
-		string memory _protectedAreaName,
 		uint256 _protectedAreaId,
+		string memory _protectedAreaName,
 		string memory _protectedAreaURI
 	) public onlyRole(ADMIN_ROLE) returns (uint256) {
 		_validateProtectedArea(_protectedAreaName, _protectedAreaId);
@@ -184,8 +170,7 @@ contract Biorbit is ERC721, ERC721URIStorage, AccessControl, ReentrancyGuard {
 		uint256 _satelliteImageId
 	) public payable nonReentrant {
 		require(
-			_satelliteImageId > 0 &&
-				_satelliteImageId <= satelliteImageIdCounter.current(),
+			_satelliteImageId <= satelliteImageIdCounter.current(),
 			"Satellite image doesn't exist."
 		);
 
@@ -225,7 +210,7 @@ contract Biorbit is ERC721, ERC721URIStorage, AccessControl, ReentrancyGuard {
 	) private view {
 		require(
 			protectedAreasNamesUsed[_protectedAreaName],
-			"Protected area isn't being monitored."
+			'Protected area is being monitored.'
 		);
 
 		ProtectedArea storage protectedArea = protectedAreas[_protectedAreaId];
@@ -234,6 +219,30 @@ contract Biorbit is ERC721, ERC721URIStorage, AccessControl, ReentrancyGuard {
 			keccak256(bytes(protectedArea.name)) ==
 				keccak256(bytes(_protectedAreaName)),
 			"They aren't the same protected area."
+		);
+	}
+
+	function _validateProtectedAreaData(uint256 _protectedAreaId) private view {
+		ProtectedArea storage protectedArea = protectedAreas[_protectedAreaId];
+
+		require(
+			bytes(protectedArea.lastDetectionDate).length == 0,
+			'Protected area already has lastDetectionDate.'
+		);
+
+		require(
+			bytes(protectedArea.totalExtension).length == 0,
+			'Protected area already has totalExtension.'
+		);
+
+		require(
+			protectedArea.detectionDates.length == 0,
+			'Protected area already has detectionDates.'
+		);
+
+		require(
+			protectedArea.forestCoverExtensions.length == 0,
+			'Protected area already has forestCoverExtensions.'
 		);
 	}
 
@@ -281,17 +290,11 @@ contract Biorbit is ERC721, ERC721URIStorage, AccessControl, ReentrancyGuard {
 		ProtectedArea storage protectedArea,
 		uint256 _id,
 		string memory _name,
-		string memory _photo,
-		string memory _description,
-		string memory _geoJson,
-		string memory _country
+		string memory _footprint
 	) private {
 		protectedArea.id = _id;
 		protectedArea.name = _name;
-		protectedArea.photo = _photo;
-		protectedArea.description = _description;
-		protectedArea.geoJson = _geoJson;
-		protectedArea.country = _country;
+		protectedArea.footprint = _footprint;
 	}
 
 	// ************************************ //
