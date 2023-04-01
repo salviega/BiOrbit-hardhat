@@ -167,21 +167,35 @@ contract Biorbit is ERC721, ERC721URIStorage, AccessControl, ReentrancyGuard {
 	}
 
 	function buySatelliteImage(
-		uint256 _satelliteImageId
+		uint256 _satelliteImageId,
+		string memory _protectedAreaName
 	) public payable nonReentrant {
 		require(
 			_satelliteImageId <= satelliteImageIdCounter.current(),
 			"Satellite image doesn't exist."
 		);
+		ProtectedArea memory protectedAreaMemory = getProtectedAreaByName(
+			_protectedAreaName
+		);
 
-		SatelliteImage memory satelliteImage = getSatelliteImage(_satelliteImageId);
+		ProtectedArea storage protectedArea = protectedAreas[
+			protectedAreaMemory.id
+		];
 
-		require(msg.value == price, 'Insufficient funds.');
-		require(!satelliteImage.sold, 'Satellite Image already sold.');
+		SatelliteImage storage satelliteImage;
 
-		satelliteImage.sold = true;
+		for (uint i = 0; i < protectedArea.satelliteImages.length; i++) {
+			if (protectedArea.satelliteImages[i].id == _satelliteImageId) {
+				satelliteImage = protectedArea.satelliteImages[i];
+				require(msg.value == satelliteImage.price, 'Insufficient funds.');
+				require(!satelliteImage.sold, 'Satellite Image already sold.');
 
-		payable(msg.sender).transfer(price);
+				satelliteImage.sold = true;
+
+				payable(msg.sender).transfer(satelliteImage.price);
+				break;
+			}
+		}
 	}
 
 	function tokenURI(
@@ -377,7 +391,7 @@ contract Biorbit is ERC721, ERC721URIStorage, AccessControl, ReentrancyGuard {
 	}
 
 	function getProtectedAreaByName(
-		string calldata name
+		string memory name
 	) public view returns (ProtectedArea memory) {
 		for (uint256 i = 0; i < protectAreaIdCounter.current(); i++) {
 			if (
